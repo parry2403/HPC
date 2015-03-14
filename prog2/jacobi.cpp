@@ -6,15 +6,9 @@
  * Copyright (c) 2014 Georgia Institute of Technology. All Rights Reserved.
  */
 #include "jacobi.h"
-
-/*
- * TODO: Implement your solutions here
- */
-
-// my implementation:
 #include <iostream>
-#include <math.h>
 #include "utils.h"
+
 // Calculates y = A*x for a square n-by-n matrix A, and n-dimensional vectors x
 // and y
 void matrix_vector_mult(const int n, const double* A, const double* x, double* y)
@@ -44,11 +38,7 @@ void matrix_vector_mult(const int n, const int m, const double* A, const double*
 // implements the sequential jacobi method
 void jacobi(const int n, double* A, double* b, double* x, int max_iter, double l2_termination)
 {
-	std::vector<double> D(n);
-	std::vector<double> invD(n);
-	std::vector<double> R(n*n);
-	std::vector<double> y(n);
-	std::vector<double> s(n);
+	double D[n], invD[n], R[n*n], y[n], s[n];
 	init(n,&x[0]);
 	diagonal( n, &A[0], &D[0]);
 	inverseDiagonal(n,&D[0],&invD[0]);

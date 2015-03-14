@@ -13,13 +13,6 @@
 
 #ifndef JACOBI_H
 #define JACOBI_H
-#include <fstream>
-#include <iterator>
-#include <vector>
-#include <string>
-#include <iostream>
-#include <stdexcept>
-#include <limits>
 #include <cmath>
 /**
  * @brief   Performs the matrix vector product: y = A*x

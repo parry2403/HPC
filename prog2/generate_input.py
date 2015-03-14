@@ -22,10 +22,10 @@ def write_rand_problem(n, name="input"):
     A.tofile(name + "_A.bin")
     b = rand_result(n)
     b.tofile(name + "_b.bin")
-#     print("A=")
-#     print(A)
-#     print("b=")
-#     print(b)
+    print("A=")
+    print(A)
+    print("b=")
+    print(b)
 
 
 def main():
