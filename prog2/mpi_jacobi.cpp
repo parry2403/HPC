@@ -17,8 +17,6 @@
 #include <math.h>
 #include <vector>
 
-//std::cerr<<"here start"<<std::endl;
-
 void distribute_vector(const int n, double* input_vector, double** local_vector, MPI_Comm comm)
 {
 	int rank, coords[2], blockSize;
@@ -27,6 +25,7 @@ void distribute_vector(const int n, double* input_vector, double** local_vector,
 	MPI_Comm col_comm;
 	MPI_Comm_split(comm,coords[1],coords[0],&col_comm);
 	
+	MPI_Barrier(comm);
 	if (coords[1] == 0)
 	{
 		int s;
@@ -52,6 +51,7 @@ void distribute_vector(const int n, double* input_vector, double** local_vector,
 	}
 	
 	MPI_Comm_free(&col_comm);
+	MPI_Barrier(comm);
 }
 
 
@@ -64,6 +64,7 @@ void gather_vector(const int n, double* local_vector, double* output_vector, MPI
 	MPI_Comm col_comm;
 	MPI_Comm_split(comm,coords[1],coords[0],&col_comm);
 	
+	MPI_Barrier(comm);
 	if (coords[1] == 0)
 	{
 		blockSize = block_decompose(n,col_comm);
@@ -79,6 +80,7 @@ void gather_vector(const int n, double* local_vector, double* output_vector, MPI
 	}
 	
 	MPI_Comm_free(&col_comm);
+	MPI_Barrier(comm);
 }
 
 void distribute_matrix(const int n, double* input_matrix, double** local_matrix, MPI_Comm comm)
@@ -93,6 +95,7 @@ void distribute_matrix(const int n, double* input_matrix, double** local_matrix,
 	blockCol = block_decompose(n,col_comm);
 	double temp[n*blockCol];
 	
+	MPI_Barrier(comm);
 	// first: scatter data at 0,0 accross the first column
 	if (coords[1] == 0)
 	{
@@ -109,8 +112,8 @@ void distribute_matrix(const int n, double* input_matrix, double** local_matrix,
 		}
 		MPI_Scatterv(input_matrix,sc,d,MPI_DOUBLE,&temp[0],n*blockCol,MPI_DOUBLE,0,col_comm);
 	}
-	MPI_Barrier(comm);
 	
+	MPI_Barrier(comm);
 	// second: scatter each temp in the first column accross their respective row
 	int size;
 	MPI_Comm_size(row_comm,&size);
@@ -137,6 +140,7 @@ void distribute_matrix(const int n, double* input_matrix, double** local_matrix,
 	
 	MPI_Comm_free(&row_comm);
 	MPI_Comm_free(&col_comm);
+	MPI_Barrier(comm);
 }
 
 void transpose_bcast_vector(const int n, double* col_vector, double* row_vector, MPI_Comm comm)
@@ -152,6 +156,7 @@ void transpose_bcast_vector(const int n, double* col_vector, double* row_vector,
 	blockRow = block_decompose(n,row_comm);
 	blockCol = block_decompose(n,col_comm);
 
+	MPI_Barrier(comm);
 	// send data from column zero to their respective diagonal locations in the same row
 	if(col == 0)
 	{
@@ -163,15 +168,14 @@ void transpose_bcast_vector(const int n, double* col_vector, double* row_vector,
 	}
 	if(row == col)
     {
-		int src_coords[2];
+		int src, src_coords[2];
 		src_coords[0]=row;
 		src_coords[1]=0;
-		int src;
 		MPI_Cart_rank(comm,src_coords,&src);
 		MPI_Recv(&row_vector[0],blockCol,MPI_DOUBLE,src,1,comm,MPI_STATUS_IGNORE);
 	}
-	MPI_Barrier(col_comm);
-    
+	
+	MPI_Barrier(comm);
 	// Broadcast diagonal data to each respective column
 	MPI_Bcast(&row_vector[0],blockRow,MPI_DOUBLE,col,col_comm);
 	
@@ -184,6 +188,7 @@ void transpose_bcast_vector(const int n, double* col_vector, double* row_vector,
 //	}
 	
 	MPI_Comm_free(&col_comm);
+	MPI_Barrier(comm);
 }
 
 
@@ -198,11 +203,12 @@ void distributed_matrix_vector_mult(const int n, double* local_A, double* local_
 	blockRow = block_decompose(n,row_comm);
 	blockCol = block_decompose(n,col_comm);
 	
+	MPI_Barrier(comm);
 	// distribute local_x on column zero 
 	double *dist_x = new double[blockRow];
 	transpose_bcast_vector(n,local_x,dist_x,comm);
-	MPI_Barrier(comm);
 	
+	MPI_Barrier(comm);
 	// compute local product pre_y from local_A and distribued x
 	double pre_y[blockCol];
 	for (int i=0;i<blockCol;i++)
@@ -212,17 +218,93 @@ void distributed_matrix_vector_mult(const int n, double* local_A, double* local_
 			pre_y[i] += (*(local_A + blockRow*i + j)) * (*(dist_x+j));
 	}
 	
+	MPI_Barrier(comm);
 	// reduce (sum) pre_y on all processors to local_y on column zero
 	MPI_Reduce(&pre_y[0],local_y,blockCol,MPI_DOUBLE,MPI_SUM,0,row_comm);
 	
 	delete[] dist_x;
+	MPI_Barrier(comm);
 }
 
 // Solves Ax = b using the iterative jacobi method
 void distributed_jacobi(const int n, double* local_A, double* local_b, double* local_x,
                 MPI_Comm comm, int max_iter, double l2_termination)
 {
-    // TODO
+	int rank, row, col, coords[2], blockRow, blockCol;
+	MPI_Comm_rank(comm,&rank);
+	MPI_Cart_coords(comm,rank,2,coords);
+	MPI_Comm row_comm, col_comm;
+	row = coords[0];
+	col = coords[1];
+	MPI_Comm_split(comm,row,col,&row_comm);
+	MPI_Comm_split(comm,col,row,&col_comm);
+	blockRow = block_decompose(n,row_comm);
+	blockCol = block_decompose(n,col_comm);
+	
+	MPI_Barrier(comm);
+	// collect D on first column
+	double D[blockCol], invD[blockCol]; 
+	if(row == col)
+    {
+		diagonal(blockCol,local_A,&D[0]);
+		int des, des_coords[2];
+		des_coords[0]=row;
+		des_coords[1]=0;
+		MPI_Cart_rank(comm,des_coords,&des);
+		MPI_Send(&D[0],blockCol,MPI_DOUBLE,des,1,comm);
+	}
+	if(col == 0)
+	{
+		int src, src_coords[2];
+		src_coords[0]=row;
+		src_coords[1]=row;
+		MPI_Cart_rank(comm,src_coords,&src);
+		MPI_Recv(&D[0],blockCol,MPI_DOUBLE,src,1,comm,MPI_STATUS_IGNORE);
+		inverseDiagonal(blockCol,&D[0],&invD[0]);
+	}
+	
+	MPI_Barrier(comm);
+	// find R = A - D
+	double R[blockRow*blockCol];
+	if(row == col)
+		nonDiagonal(blockCol,local_A,&R[0]);
+	else
+	{
+		for (int i=0;i<blockRow*blockCol;i++)
+			R[i] = *(local_A+i);
+	}
+	
+	// initialize local_x
+	init(blockCol,local_x);
+	
+	MPI_Barrier(comm);
+	double w[blockCol], s[blockCol], l2, temp;
+	// jacobi iteration
+	for (int iter=0;iter<max_iter;iter++)
+	{
+		distributed_matrix_vector_mult(n,&R[0],local_x,&w[0],comm);
+		if (col == 0)
+		{
+			vectorSub(blockCol,local_b,&w[0],&s[0]);
+			vectorMult(blockCol,&invD[0],&s[0],local_x);
+		}
+		MPI_Barrier(comm);
+		distributed_matrix_vector_mult(n,local_A,local_x,&w[0],comm);
+		if (col == 0)
+		{
+			vectorSub(blockCol,&w[0],local_b,&s[0]);
+			temp = 0;
+			for(int i=0;i<blockCol;i++)
+				temp += s[i]*s[i];
+			MPI_Reduce(&temp,&l2,1,MPI_DOUBLE,MPI_SUM,0,col_comm);
+		}
+		if (row == 0 && col == 0)
+			l2 = sqrt(l2);
+		MPI_Barrier(comm);
+		MPI_Bcast(&l2,1,MPI_DOUBLE,0,comm);
+		if (l2 <= l2_termination)
+			return;
+	}
 }
 
 
