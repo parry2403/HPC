@@ -67,9 +67,21 @@ void gather_vector(const int n, double* local_vector, double* output_vector, MPI
 	MPI_Barrier(comm);
 	if (coords[1] == 0)
 	{
+		int s;
+		MPI_Comm_size(col_comm,&s);
+		int rc[s], d[s];
+		for (int i=0;i<s;i++)
+		{
+			rc[i] = block_decompose(n,s,i);
+			if (i == 0)
+				d[i] = 0;
+			else
+				d[i] = i*rc[i-1];
+		}
+		
 		blockSize = block_decompose(n,col_comm);
-		MPI_Gather(local_vector,blockSize,MPI_DOUBLE,output_vector,blockSize,MPI_DOUBLE,0,col_comm);
-
+		MPI_Gatherv(local_vector,blockSize,MPI_DOUBLE,output_vector,rc,d,MPI_DOUBLE,0,col_comm);
+		
 //		if (coords[0] == 0)
 //		{
 //			std::cerr<<"collected = ";
@@ -211,12 +223,13 @@ void distributed_matrix_vector_mult(const int n, double* local_A, double* local_
 	MPI_Barrier(comm);
 	// compute local product pre_y from local_A and distribued x
 	double pre_y[blockCol];
-	for (int i=0;i<blockCol;i++)
-	{
-		pre_y[i] = 0;
-		for (int j=0;j<blockRow;j++)
-			pre_y[i] += (*(local_A + blockRow*i + j)) * (*(dist_x+j));
-	}
+//	for (int i=0;i<blockCol;i++)
+//	{
+//		pre_y[i] = 0;
+//		for (int j=0;j<blockRow;j++)
+//			pre_y[i] += (*(local_A + blockRow*i + j)) * (*(dist_x+j));
+//	}
+	matrix_vector_mult(blockCol,blockRow,local_A,local_x,&pre_y[0]);
 	
 	MPI_Barrier(comm);
 	// reduce (sum) pre_y on all processors to local_y on column zero
@@ -282,6 +295,8 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 	// jacobi iteration
 	for (int iter=0;iter<max_iter;iter++)
 	{
+		if (rank == 0)
+			std::cerr<<"for start "<<iter<<std::endl;
 		distributed_matrix_vector_mult(n,&R[0],local_x,&w[0],comm);
 		if (col == 0)
 		{
@@ -302,6 +317,8 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 			l2 = sqrt(l2);
 		MPI_Barrier(comm);
 		MPI_Bcast(&l2,1,MPI_DOUBLE,0,comm);
+		if (rank == 0)
+			std::cerr<<"for end "<<iter<<std::endl;
 		if (l2 <= l2_termination)
 			return;
 	}
