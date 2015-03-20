@@ -175,6 +175,11 @@ int main(int argc, char *argv[])
       // allocate output and run the parallel jacobi implementation
       if (rank == 0)
          x = std::vector<double>(n);
+     //   for (int i=0;i<A.size();i++)
+     //  {
+      
+     //       std::cerr<<A[i]<<std::endl;
+     // }
       mpi_jacobi(n, &A[0], &b[0], &x[0], grid_comm);
    }
    else
@@ -183,6 +188,11 @@ int main(int argc, char *argv[])
 
       // sequential jacobi
       x = std::vector<double>(n);
+    //   for (int i=0;i<A.size();i++)
+    // {
+      
+    //       std::cerr<<A[i]<<std::endl;
+    // }
       jacobi(n, &A[0], &b[0], &x[0]);
    }
 

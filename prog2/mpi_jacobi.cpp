@@ -44,10 +44,10 @@ void distribute_vector(const int n, double* input_vector, double** local_vector,
 		*local_vector = new double[blockSize];
 		MPI_Scatterv(&input_vector[0],sc,d,MPI_DOUBLE,*local_vector,blockSize,MPI_DOUBLE,0,col_comm);
 		
-//		std::cerr<<"Rank = "<<rank<<"values = ";
-//		for (int i=0;i<blockSize;i++)
-//			std::cerr<<(*local_vector)[i]<<",";
-//		std::cerr<<std::endl;
+		// std::cerr<<"Rank = "<<rank<<"values = ";
+		// for (int i=0;i<blockSize;i++)
+		// 	std::cerr<<(*local_vector)[i]<<",";
+		// std::cerr<<std::endl;
 	}
 	
 	MPI_Comm_free(&col_comm);
@@ -193,10 +193,8 @@ void transpose_bcast_vector(const int n, double* col_vector, double* row_vector,
 	
 //	if (rank == 1)
 //	{
-//		std::cerr<<"row_vector = ";
-//		for (int i=0;i<blockRow;i++)
-//			std::cerr<<row_vector[i]<<",";
-//		std::cerr<<std::endl;
+	//	
+	//	std::cerr<<std::endl;
 //	}
 	
 	MPI_Comm_free(&col_comm);
@@ -219,7 +217,8 @@ void distributed_matrix_vector_mult(const int n, double* local_A, double* local_
 	// distribute local_x on column zero 
 	double *dist_x = new double[blockRow];
 	transpose_bcast_vector(n,local_x,dist_x,comm);
-	
+	//	for (int i=0;i<blockRow;i++)
+	//		std::cerr<<dist_x[i]<<std::cerr<<std::endl;
 	MPI_Barrier(comm);
 	// compute local product pre_y from local_A and distribued x
 	double pre_y[blockCol];
@@ -229,11 +228,18 @@ void distributed_matrix_vector_mult(const int n, double* local_A, double* local_
 //		for (int j=0;j<blockRow;j++)
 //			pre_y[i] += (*(local_A + blockRow*i + j)) * (*(dist_x+j));
 //	}
-	matrix_vector_mult(blockCol,blockRow,local_A,local_x,&pre_y[0]);
+	matrix_vector_mult(blockCol,blockRow,&local_A[0],&dist_x[0],&pre_y[0]);
 	
 	MPI_Barrier(comm);
 	// reduce (sum) pre_y on all processors to local_y on column zero
-	MPI_Reduce(&pre_y[0],local_y,blockCol,MPI_DOUBLE,MPI_SUM,0,row_comm);
+	 // if(coords[1]==coords[0] && coords[1]==1  ){
+  //    	 for (int i=0;i<blockRow;i++){
+	 //    //	for (int j=0;j<blockCol;j++){
+	 // 	    	std::cerr<<pre_y[i]<<std::endl;
+	 // 	    	//}
+	 //     }
+	 // }
+	MPI_Reduce(&pre_y[0],&local_y[0],blockCol,MPI_DOUBLE,MPI_SUM,0,row_comm);
 	
 	delete[] dist_x;
 	MPI_Barrier(comm);
@@ -257,6 +263,7 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 	MPI_Barrier(comm);
 	// collect D on first column
 	double D[blockCol], invD[blockCol]; 
+	
 	if(row == col)
     {
 		diagonal(blockCol,local_A,&D[0]);
@@ -279,12 +286,16 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 	MPI_Barrier(comm);
 	// find R = A - D
 	double R[blockRow*blockCol];
-	if(row == col)
+	if(row == col){
 		nonDiagonal(blockCol,local_A,&R[0]);
+
+	}
 	else
 	{
+	
 		for (int i=0;i<blockRow*blockCol;i++)
 			R[i] = *(local_A+i);
+
 	}
 	
 	// initialize local_x
@@ -292,36 +303,40 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 	
 	MPI_Barrier(comm);
 	double w[blockCol], s[blockCol], l2, temp;
-	// jacobi iteration
+	
 	for (int iter=0;iter<max_iter;iter++)
 	{
-		if (rank == 0)
-			std::cerr<<"for start "<<iter<<std::endl;
-		distributed_matrix_vector_mult(n,&R[0],local_x,&w[0],comm);
+	  
+		
+		distributed_matrix_vector_mult(n,&R[0],&local_x[0],&w[0],comm);
 		if (col == 0)
 		{
-			vectorSub(blockCol,local_b,&w[0],&s[0]);
-			vectorMult(blockCol,&invD[0],&s[0],local_x);
+		//	std::cerr<<"Here***** "<<iter<<std::endl;
+			vectorSub(blockCol,&local_b[0],&w[0],&s[0]);
+			vectorMult(blockCol,&invD[0],&s[0],&local_x[0]);
+
+		
 		}
 		MPI_Barrier(comm);
-		distributed_matrix_vector_mult(n,local_A,local_x,&w[0],comm);
-		if (col == 0)
-		{
-			vectorSub(blockCol,&w[0],local_b,&s[0]);
-			temp = 0;
-			for(int i=0;i<blockCol;i++)
-				temp += s[i]*s[i];
-			MPI_Reduce(&temp,&l2,1,MPI_DOUBLE,MPI_SUM,0,col_comm);
-		}
-		if (row == 0 && col == 0)
-			l2 = sqrt(l2);
-		MPI_Barrier(comm);
-		MPI_Bcast(&l2,1,MPI_DOUBLE,0,comm);
-		if (rank == 0)
-			std::cerr<<"for end "<<iter<<std::endl;
-		if (l2 <= l2_termination)
-			return;
+		 distributed_matrix_vector_mult(n,&local_A[0],&local_x[0],&w[0],comm);
+		 if (col == 0)
+		 {
+		 	vectorSub(blockCol,&w[0],&local_b[0],&s[0]);
+		 	temp = 0;
+		 	for(int i=0;i<blockCol;i++)
+		 		temp += s[i]*s[i];
+		 	MPI_Reduce(&temp,&l2,1,MPI_DOUBLE,MPI_SUM,0,col_comm);
+		 }
+		 if (row == 0 && col == 0)
+		 	l2 = sqrt(l2);
+		 MPI_Barrier(comm);
+		 MPI_Bcast(&l2,1,MPI_DOUBLE,0,comm);
+		// // if (rank == 0)
+		// // 	std::cerr<<"for end "<<iter<<std::endl;
+		 if (l2 <= l2_termination)
+		 	return;
 	}
+ 	
 }
 
 
@@ -348,15 +363,51 @@ void mpi_jacobi(const int n, double* A, double* b, double* x, MPI_Comm comm,
                 int max_iter, double l2_termination)
 {
     // distribute the array onto local processors!
+    // std::cerr<<"Here"<<std::endl;
+    //   for (int i=0;i<n;i++)
+    // {
+      
+    //        std::cerr<<A[i]<<std::endl;
+    //  }
     double* local_A = NULL;
     double* local_b = NULL;
     distribute_matrix(n, &A[0], &local_A, comm);
     distribute_vector(n, &b[0], &local_b, comm);
-	
+    MPI_Barrier(comm);
+    int rank;
+    MPI_Comm_rank(comm,&rank);
+    int coords[2];
+	MPI_Cart_coords(comm,rank,2,coords);
+  //   std::cerr<<"Rank = "<<rank<<"values = ";
+		
+	  // for (int i=0;i<4;i++)
+   //    {
+      
+   //           std::cerr<<local_A[i]<<std::endl;
+   //     }
+  //     if(coords[1]==0)
+  //     {
+  //     	for (int i=0;i<2;i++)
+  //     {
+      
+  //            std::cerr<<local_b[i]<<std::endl;
+  //     }
+  //  }
+//		pre_y[i] = 0;
+//		for (int j=0;j<blockRow;j++)
+//			pre_y[i] += (*(local_A + blockRow*i + j)) * (*(dist_x+j));
+//	}
     // allocate local result space
     double* local_x = new double[block_decompose_by_dim(n, comm, 0)];
     distributed_jacobi(n, local_A, local_b, local_x, comm, max_iter, l2_termination);
-	
+	   //   if(coords[1]==0)
+    //    {
+    //    	for (int i=0;i<2;i++)
+    //    {
+      
+    //           std::cerr<<local_x[i]<<std::endl;
+    //    }
+    // }
     // gather results back to rank 0
-    gather_vector(n, local_x, x, comm);
+    gather_vector(n, local_x, &x[0], comm);
 }

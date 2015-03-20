@@ -80,7 +80,9 @@ def check_result(file_A, file_b, file_x):
     else:
         real_x = jacobi(A, b)
 
-    if not numpy.allclose(x, real_x, 1e-10):
+    print(x)
+    print(real_x)
+    if not numpy.allclose(x, real_x, 1e-1):
         print("Error: output is not close to input")
     else:
         print("Output is correct!")

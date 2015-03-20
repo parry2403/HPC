@@ -47,13 +47,17 @@ void jacobi(const int n, double* A, double* b, double* x, int max_iter, double l
 	vectorSub(n,&y[0],&b[0],&s[0]);
 	
 	int iter = 0;
+
+	//while(norm(n,&s[0]) > l2_termination && iter < max_iter)
 	while(norm(n,&s[0]) > l2_termination && iter < max_iter)
 	{
 		matrix_vector_mult(n,&R[0],&x[0],&y[0]);
 		vectorSub(n,&b[0],&y[0],&s[0]);
+		
 		vectorMult(n,&invD[0],&s[0],&x[0]);
-
+		
 		matrix_vector_mult(n,&A[0],&x[0],&y[0]);
 		vectorSub(n,&y[0],&b[0],&s[0]);	
+		iter=iter+1;
 	}
 }
