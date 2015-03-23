@@ -38,7 +38,12 @@ void matrix_vector_mult(const int n, const int m, const double* A, const double*
 // implements the sequential jacobi method
 void jacobi(const int n, double* A, double* b, double* x, int max_iter, double l2_termination)
 {
-	double D[n], invD[n], R[n*n], y[n], s[n];
+	double* D = new double[n]; 
+	double* invD = new double[n]; 
+	double* R = new double[n*n]; 
+	double* y = new double[n];
+	double* s = new double[n];
+	
 	init(n,&x[0]);
 	diagonal( n, &A[0], &D[0]);
 	inverseDiagonal(n,&D[0],&invD[0]);
