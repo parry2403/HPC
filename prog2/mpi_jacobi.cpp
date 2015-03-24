@@ -30,6 +30,8 @@ void distribute_vector(const int n, double* input_vector, double** local_vector,
 	{
 		int s;
 		MPI_Comm_size(col_comm,&s);
+		// int sc=new int[s];
+		// int d=new int[s];
 		int sc[s], d[s];
 		for (int i=0;i<s;i++)
 		{
@@ -37,7 +39,7 @@ void distribute_vector(const int n, double* input_vector, double** local_vector,
 			if (i == 0)
 				d[i] = 0;
 			else
-				d[i] = i*sc[i-1];
+				d[i] = d[i-1]+sc[i-1];
 		}
 		
 		blockSize = block_decompose(n,col_comm);
@@ -76,7 +78,7 @@ void gather_vector(const int n, double* local_vector, double* output_vector, MPI
 			if (i == 0)
 				d[i] = 0;
 			else
-				d[i] = i*rc[i-1];
+				d[i] = d[i-1]+rc[i-1];
 		}
 		
 		blockSize = block_decompose(n,col_comm);
@@ -105,8 +107,8 @@ void distribute_matrix(const int n, double* input_matrix, double** local_matrix,
 	MPI_Comm_split(comm,coords[1],coords[0],&col_comm);
 	blockRow = block_decompose(n,row_comm);
 	blockCol = block_decompose(n,col_comm);
-	double temp[n*blockCol];
-	
+//	double temp[n*blockCol];
+	double *temp =  new double[n*blockCol];
 	MPI_Barrier(comm);
 	// first: scatter data at 0,0 accross the first column
 	if (coords[1] == 0)
@@ -120,7 +122,7 @@ void distribute_matrix(const int n, double* input_matrix, double** local_matrix,
 			if (i == 0)
 				d[i] = 0;
 			else
-				d[i] = i*sc[i-1];
+				d[i] = d[i-1]+sc[i-1];
 		}
 		MPI_Scatterv(input_matrix,sc,d,MPI_DOUBLE,&temp[0],n*blockCol,MPI_DOUBLE,0,col_comm);
 	}
@@ -129,14 +131,15 @@ void distribute_matrix(const int n, double* input_matrix, double** local_matrix,
 	// second: scatter each temp in the first column accross their respective row
 	int size;
 	MPI_Comm_size(row_comm,&size);
-	int sendCount[size], disp[size];
+	int *sendCount=new int[size];
+	int *disp=new int[size];
 	for (int i=0;i<size;i++)
 	{
 		sendCount[i] = block_decompose(n,size,i);
 		if (i == 0)
 			disp[i] = 0;
 		else
-			disp[i] = i*sendCount[i-1];
+			disp[i] = disp[i-1]+sendCount[i-1];
 	}
 	*local_matrix = new double[blockRow*blockCol];
 	for (int i=0;i<blockCol;i++)
@@ -221,14 +224,14 @@ void distributed_matrix_vector_mult(const int n, double* local_A, double* local_
 	//		std::cerr<<dist_x[i]<<std::cerr<<std::endl;
 	MPI_Barrier(comm);
 	// compute local product pre_y from local_A and distribued x
-	double pre_y[blockCol];
-//	for (int i=0;i<blockCol;i++)
-//	{
-//		pre_y[i] = 0;
-//		for (int j=0;j<blockRow;j++)
-//			pre_y[i] += (*(local_A + blockRow*i + j)) * (*(dist_x+j));
-//	}
-	matrix_vector_mult(blockCol,blockRow,&local_A[0],&dist_x[0],&pre_y[0]);
+	double *pre_y= new double[blockCol];
+	for (int i=0;i<blockCol;i++)
+	{
+		pre_y[i] = 0;
+		for (int j=0;j<blockRow;j++)
+			pre_y[i] += (*(local_A + blockRow*i + j)) * (*(dist_x+j));
+	}
+//	matrix_vector_mult(blockCol,blockRow,&local_A[0],&dist_x[0],&pre_y[0]);
 	
 	MPI_Barrier(comm);
 	// reduce (sum) pre_y on all processors to local_y on column zero
@@ -262,7 +265,9 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 	
 	MPI_Barrier(comm);
 	// collect D on first column
-	double D[blockCol], invD[blockCol]; 
+//	double D[blockCol], invD[blockCol]; 
+	double* D = new double[blockCol];
+	double* invD = new double[blockCol];
 	
 	if(row == col)
     {
@@ -285,7 +290,8 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 	
 	MPI_Barrier(comm);
 	// find R = A - D
-	double R[blockRow*blockCol];
+	//double R[blockRow*blockCol];
+	double* R = new double[blockRow*blockCol]; 
 	if(row == col){
 		nonDiagonal(blockCol,local_A,&R[0]);
 
@@ -302,8 +308,9 @@ void distributed_jacobi(const int n, double* local_A, double* local_b, double* l
 	init(blockCol,local_x);
 	
 	MPI_Barrier(comm);
-	double w[blockCol], s[blockCol], l2, temp;
-	
+	double  l2, temp;
+	double* w = new double[blockCol];
+	double* s = new double[blockCol];
 	for (int iter=0;iter<max_iter;iter++)
 	{
 	  
@@ -369,6 +376,9 @@ void mpi_jacobi(const int n, double* A, double* b, double* x, MPI_Comm comm,
       
     //        std::cerr<<A[i]<<std::endl;
     //  }
+
+
+
     double* local_A = NULL;
     double* local_b = NULL;
     distribute_matrix(n, &A[0], &local_A, comm);
@@ -378,6 +388,34 @@ void mpi_jacobi(const int n, double* A, double* b, double* x, MPI_Comm comm,
     MPI_Comm_rank(comm,&rank);
     int coords[2];
 	MPI_Cart_coords(comm,rank,2,coords);
+
+	int blockRow, blockCol;
+	MPI_Comm_rank(comm,&rank);
+	MPI_Cart_coords(comm,rank,2,coords);
+	MPI_Comm row_comm, col_comm;
+	MPI_Comm_split(comm,coords[0],coords[1],&row_comm);
+	MPI_Comm_split(comm,coords[1],coords[0],&col_comm);
+	blockRow = block_decompose(n,row_comm);
+	blockCol = block_decompose(n,col_comm);
+
+
+	// std::cerr<<rank<<std::endl;
+	// 	 for (int i=0;i<blockCol*blockRow;i++)
+	//      	{
+	//   	    	std::cerr<<local_A[i]<<",";
+
+	//  // 	    	//}
+	//       }
+	//       std::cerr<<std::endl;
+	//       if (coords[1]==0){
+	// 	  for (int i=0;i<blockCol;i++){
+	//  		std::cerr<<local_b[i]<<",";
+	//  	}
+	//  	 std::cerr<<std::endl;
+	//  }
+	 // 	    	std::cerr<<pre_y[i]<<std::endl;
+	 // 	    	//}
+	 //     }
   //   std::cerr<<"Rank = "<<rank<<"values = ";
 		
 	  // for (int i=0;i<4;i++)
