@@ -24,7 +24,7 @@
 #include "utils.h"
 #include "io.h"
 
-#define IS_MAC 1 // 0 for linux, 1 for mac
+#define IS_MAC 0 // 0 for linux, 1 for mac
 
 #if IS_MAC
 // ---------------------------- OSX
